@@ -1,0 +1,243 @@
+# HAW Kiel Notebook Base Image
+# Copyright (c) HAW Kiel — structure based on jupyter/docker-stacks (Modified BSD License)
+#
+# Replaces conda/mamba with uv. All Python packages go into a uv venv at ~/.venv.
+# Scripts are copied verbatim from docker-stacks-foundation and base-notebook,
+# with minimal adaptations noted inline.
+#
+# Chain replicated:
+#   docker-stacks-foundation → system packages, jovyan user, fix-permissions, start.sh
+#   base-notebook            → JupyterLab, start-notebook.py, start-singleuser.py,
+#                              jupyter_server_config.py, docker_healthcheck.py
+#   minimal-notebook         → git, nano, unzip, latex, curl
+#   scipy-notebook equiv.    → scientific Python packages via uv
+#   r-notebook equiv.        → R + IRkernel via r2u
+
+FROM ubuntu:24.04
+
+LABEL maintainer="HAW Kiel"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG NB_USER="jovyan"
+ARG NB_UID="1000"
+ARG NB_GID="100"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── environment (mirrors docker-stacks-foundation) ────────────────────────────
+# CONDA_DIR is set to VENV so that start.sh's sudoers secure_path modification
+# and jupyter_server_config.py's GEN_CERT path resolution work unchanged.
+ENV CONDA_DIR="/home/${NB_USER}/.venv" \
+    SHELL=/bin/bash \
+    NB_USER="${NB_USER}" \
+    NB_UID=${NB_UID} \
+    NB_GID=${NB_GID} \
+    LC_ALL=C.UTF-8 \
+    LANG=C.UTF-8 \
+    LANGUAGE=C.UTF-8
+ENV HOME="/home/${NB_USER}" \
+    VENV="/home/${NB_USER}/.venv"
+ENV PATH="${VENV}/bin:/usr/local/bin:${PATH}" \
+    VIRTUAL_ENV="${VENV}" \
+    JUPYTER_PORT=8888
+
+USER root
+
+# ── system packages ───────────────────────────────────────────────────────────
+# foundation: bzip2, ca-certificates, locales, netbase, sudo, tini, wget
+# base-notebook: fonts-liberation, pandoc, run-one
+# minimal-notebook: curl, git, nano-tiny, tzdata, unzip, vim-tiny, openssh-client,
+#                   less, texlive-*, xclip
+RUN apt-get update --yes && \
+    apt-get upgrade --yes && \
+    apt-get install --yes --no-install-recommends \
+        bzip2 \
+        ca-certificates \
+        locales \
+        netbase \
+        sudo \
+        tini \
+        wget \
+        fonts-liberation \
+        pandoc \
+        run-one \
+        curl \
+        git \
+        nano-tiny \
+        tzdata \
+        unzip \
+        vim-tiny \
+        openssh-client \
+        less \
+        xclip \
+        texlive-xetex \
+        texlive-fonts-recommended \
+        texlive-fonts-extra \
+        texlive-plain-generic \
+        texlive-latex-extra \
+        gnupg \
+        fonts-dejavu \
+        gfortran \
+        gcc \
+        g++ \
+        make \
+        libgomp1 \
+        libssl-dev \
+        libffi-dev \
+        libzmq3-dev && \
+    update-alternatives --install /usr/bin/nano nano /bin/nano-tiny 10 && \
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
+    echo "C.UTF-8 UTF-8" >> /etc/locale.gen && \
+    locale-gen && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# ── uv ────────────────────────────────────────────────────────────────────────
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# ── scripts (verbatim from docker-stacks unless noted) ────────────────────────
+COPY scripts/fix-permissions          /usr/local/bin/fix-permissions
+COPY scripts/run-hooks.sh             /usr/local/bin/run-hooks.sh
+COPY scripts/start.sh                 /usr/local/bin/start.sh
+COPY scripts/start-notebook.py        /usr/local/bin/start-notebook.py
+COPY scripts/start-singleuser.py      /usr/local/bin/start-singleuser.py
+COPY scripts/10activate-venv.sh       /usr/local/bin/before-notebook.d/10activate-venv.sh
+# adapted: CONDA_DIR reference replaced with VENV
+COPY scripts/jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
+COPY scripts/docker_healthcheck.py    /etc/jupyter/docker_healthcheck.py
+
+RUN chmod a+rx \
+        /usr/local/bin/fix-permissions \
+        /usr/local/bin/run-hooks.sh \
+        /usr/local/bin/start.sh \
+        /usr/local/bin/start-notebook.py \
+        /usr/local/bin/start-singleuser.py \
+        /usr/local/bin/before-notebook.d/10activate-venv.sh && \
+    mkdir -p /usr/local/bin/start-notebook.d && \
+    fix-permissions /etc/jupyter/
+
+# ── r2u: binary R packages for Ubuntu 24.04 (noble) ──────────────────────────
+RUN curl -fsSL https://cdn.jsdelivr.net/gh/eddelbuettel/r2u/inst/scripts/add_cranapt_noble.sh | bash && \
+    apt-get update --yes && \
+    apt-get install --yes --no-install-recommends \
+        r-base \
+        r-cran-caret \
+        r-cran-crayon \
+        r-cran-devtools \
+        r-cran-e1071 \
+        r-cran-forecast \
+        r-cran-hexbin \
+        r-cran-htmltools \
+        r-cran-htmlwidgets \
+        r-cran-irkernel \
+        r-cran-nycflights13 \
+        r-cran-randomforest \
+        r-cran-rcurl \
+        r-cran-rmarkdown \
+        r-cran-rodbc \
+        r-cran-rsqlite \
+        r-cran-shiny \
+        r-cran-tidymodels \
+        r-cran-tidyverse \
+        unixodbc && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# ── prompt color in bashrc skeleton ──────────────────────────────────────────
+RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /etc/skel/.bashrc
+
+# ── jovyan user (mirrors docker-stacks-foundation exactly) ────────────────────
+RUN if grep -q "${NB_UID}" /etc/passwd; then \
+        userdel --remove "$(id -un "${NB_UID}")"; \
+    fi && \
+    echo "auth requisite pam_deny.so" >> /etc/pam.d/su && \
+    sed -i.bak -e 's/^%admin/#%admin/' /etc/sudoers && \
+    sed -i.bak -e 's/^%sudo/#%sudo/' /etc/sudoers && \
+    useradd --no-log-init --create-home --shell /bin/bash \
+        --uid "${NB_UID}" --no-user-group "${NB_USER}" && \
+    chmod g+w /etc/passwd && \
+    fix-permissions "/home/${NB_USER}"
+
+RUN rm -rf "/home/${NB_USER}/.cache/"
+
+USER ${NB_UID}
+WORKDIR /tmp
+
+# ── work directory ────────────────────────────────────────────────────────────
+RUN mkdir "/home/${NB_USER}/work" && \
+    fix-permissions "/home/${NB_USER}"
+
+# ── uv venv: scipy-notebook equivalent + requested packages ──────────────────
+RUN uv venv "${VENV}" --python 3.12 && \
+    uv pip install --no-cache-dir \
+        jupyterlab \
+        jupyterhub \
+        notebook \
+        nbconvert \
+        ipykernel \
+        ipympl \
+        ipywidgets \
+        widgetsnbextension \
+        altair \
+        beautifulsoup4 \
+        bokeh \
+        bottleneck \
+        cloudpickle \
+        dask \
+        dill \
+        h5py \
+        jupyterlab-git \
+        matplotlib \
+        numba \
+        numexpr \
+        numpy \
+        openpyxl \
+        pandas \
+        patsy \
+        requests \
+        scikit-image \
+        scikit-learn \
+        scipy \
+        seaborn \
+        sqlalchemy \
+        statsmodels \
+        sympy \
+        xlrd \
+        jupyter-resource-usage \
+        plotly \
+        transformers \
+        sentence-transformers \
+        marimo \
+        uv && \
+    jupyter server --generate-config && \
+    jupyter lab clean && \
+    rm -rf "/home/${NB_USER}/.cache/yarn" && \
+    fix-permissions "${VENV}" && \
+    fix-permissions "/home/${NB_USER}"
+
+# ── register Python kernel ────────────────────────────────────────────────────
+RUN python -m ipykernel install \
+        --user \
+        --name uv-env \
+        --display-name "Python (uv)"
+
+# ── register Marimo kernel ────────────────────────────────────────────────────
+RUN mkdir -p "/home/${NB_USER}/.local/share/jupyter/kernels/marimo" && \
+    echo '{"argv": ["python", "-m", "marimo", "kernel", "{connection_file}"], "display_name": "Marimo", "language": "python"}' \
+    > "/home/${NB_USER}/.local/share/jupyter/kernels/marimo/kernel.json"
+
+# ── register IRkernel (needs jupyter on PATH, runs after venv is built) ───────
+USER root
+RUN Rscript -e "IRkernel::installspec(user=FALSE)"
+RUN fix-permissions "/home/${NB_USER}"
+RUN rm -rf "/home/${NB_USER}/.cache/"
+
+USER ${NB_UID}
+WORKDIR ${HOME}
+
+# ── healthcheck (verbatim from base-notebook) ─────────────────────────────────
+EXPOSE ${JUPYTER_PORT}
+HEALTHCHECK --interval=3s --timeout=1s --start-period=3s --retries=3 \
+    CMD /etc/jupyter/docker_healthcheck.py || exit 1
+
+ENTRYPOINT ["tini", "-g", "--", "start.sh"]
+CMD ["start-notebook.py"]

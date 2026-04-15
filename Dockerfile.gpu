@@ -1,0 +1,19 @@
+# HAW Kiel GPU Notebook Image
+# Adds CUDA-enabled PyTorch and nvdashboard to the base image
+# Requires NVIDIA container runtime on the node
+ARG BASE_IMAGE=notebook-base:latest
+FROM ${BASE_IMAGE}
+
+LABEL maintainer="HAW Kiel"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+USER root
+
+USER ${NB_UID}
+
+RUN uv pip install --no-cache-dir \
+    torch \
+    jupyterlab-nvdashboard && \
+    fix-permissions "${VENV}" && \
+    fix-permissions "/home/${NB_USER}"

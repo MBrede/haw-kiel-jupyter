@@ -1,0 +1,18 @@
+# HAW Kiel CPU Notebook Image
+# Adds CPU-only PyTorch to the base image
+ARG BASE_IMAGE=notebook-base:latest
+FROM ${BASE_IMAGE}
+
+LABEL maintainer="HAW Kiel"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+USER root
+
+USER ${NB_UID}
+
+RUN uv pip install --no-cache-dir \
+    torch \
+    --index-url https://download.pytorch.org/whl/cpu && \
+    fix-permissions "${VENV}" && \
+    fix-permissions "/home/${NB_USER}"
