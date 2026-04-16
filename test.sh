@@ -89,6 +89,12 @@ run_test "python resolves to venv python" \
 run_test "jupyterhub-singleuser available" \
     "${BASE_IMAGE}" jupyterhub-singleuser --version
 
+run_test "jupyterhub-singleuser symlinked to /usr/local/bin" \
+    "${BASE_IMAGE}" test -L /usr/local/bin/jupyterhub-singleuser
+
+run_test "jupyter symlinked to /usr/local/bin" \
+    "${BASE_IMAGE}" test -L /usr/local/bin/jupyter
+
 run_test "jupyter lab available" \
     "${BASE_IMAGE}" jupyter lab --version
 
@@ -273,12 +279,24 @@ if [[ "${FAIL}" -gt 0 ]]; then
 else
     echo "  ✓ All tests passed. Safe to push."
     echo ""
-    echo "  To push:"
+    echo ""
+    echo "  To push to registry:"
+    echo "    export REGISTRY=docker.io"
+    echo "    export REGISTRY_USER=<username>"
+    echo ""
+    echo "    docker login \${REGISTRY}"
+    echo ""
     echo "    docker tag ${BASE_IMAGE} \${REGISTRY}/\${REGISTRY_USER}/notebook-base:latest"
-    echo "    docker tag ${CPU_IMAGE}  \${REGISTRY}/\${REGISTRY_USER}/notebook-cpu:latest"
-    echo "    docker tag ${GPU_IMAGE}  \${REGISTRY}/\${REGISTRY_USER}/notebook-gpu:latest"
     echo "    docker push \${REGISTRY}/\${REGISTRY_USER}/notebook-base:latest"
+    echo ""
+    echo "    docker build -f Dockerfile.cpu \"
+    echo "      --build-arg BASE_IMAGE=\${REGISTRY}/\${REGISTRY_USER}/notebook-base:latest \"
+    echo "      -t \${REGISTRY}/\${REGISTRY_USER}/notebook-cpu:latest ."
     echo "    docker push \${REGISTRY}/\${REGISTRY_USER}/notebook-cpu:latest"
+    echo ""
+    echo "    docker build -f Dockerfile.gpu \"
+    echo "      --build-arg BASE_IMAGE=\${REGISTRY}/\${REGISTRY_USER}/notebook-base:latest \"
+    echo "      -t \${REGISTRY}/\${REGISTRY_USER}/notebook-gpu:latest ."
     echo "    docker push \${REGISTRY}/\${REGISTRY_USER}/notebook-gpu:latest"
 
     exit 0

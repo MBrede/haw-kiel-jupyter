@@ -28,7 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # ── environment (mirrors docker-stacks-foundation) ────────────────────────────
 # CONDA_DIR is set to VENV so that start.sh's sudoers secure_path modification
 # and jupyter_server_config.py's GEN_CERT path resolution work unchanged.
-ENV CONDA_DIR="/home/${NB_USER}/.venv" \
+ENV CONDA_DIR="/opt/venv" \
     SHELL=/bin/bash \
     NB_USER="${NB_USER}" \
     NB_UID=${NB_UID} \
@@ -37,12 +37,16 @@ ENV CONDA_DIR="/home/${NB_USER}/.venv" \
     LANG=C.UTF-8 \
     LANGUAGE=C.UTF-8
 ENV HOME="/home/${NB_USER}" \
-    VENV="/home/${NB_USER}/.venv"
+    VENV="/opt/venv"
 ENV PATH="${VENV}/bin:/usr/local/bin:${PATH}" \
     VIRTUAL_ENV="${VENV}" \
     JUPYTER_PORT=8888
 
 USER root
+
+# use German mirror for faster downloads from Kiel
+RUN sed -i "s|http://archive.ubuntu.com|http://de.archive.ubuntu.com|g" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || \
+    sed -i "s|http://archive.ubuntu.com|http://de.archive.ubuntu.com|g" /etc/apt/sources.list 2>/dev/null || true
 
 # ── system packages ───────────────────────────────────────────────────────────
 # foundation: bzip2, ca-certificates, locales, netbase, sudo, tini, wget
@@ -50,7 +54,6 @@ USER root
 # minimal-notebook: curl, git, nano-tiny, tzdata, unzip, vim-tiny, openssh-client,
 #                   less, texlive-*, xclip
 RUN apt-get update --yes && \
-    apt-get upgrade --yes && \
     apt-get install --yes --no-install-recommends \
         bzip2 \
         ca-certificates \
@@ -145,6 +148,9 @@ RUN curl -fsSL https://cdn.jsdelivr.net/gh/eddelbuettel/r2u/inst/scripts/add_cra
 # ── prompt color in bashrc skeleton ──────────────────────────────────────────
 RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /etc/skel/.bashrc
 
+# ── create /opt/venv dir owned by jovyan (mirrors CONDA_DIR=/opt/conda pattern)
+RUN mkdir -p /opt/venv
+
 # ── jovyan user (mirrors docker-stacks-foundation exactly) ────────────────────
 RUN if grep -q "${NB_UID}" /etc/passwd; then \
         userdel --remove "$(id -un "${NB_UID}")"; \
@@ -155,7 +161,9 @@ RUN if grep -q "${NB_UID}" /etc/passwd; then \
     useradd --no-log-init --create-home --shell /bin/bash \
         --uid "${NB_UID}" --no-user-group "${NB_USER}" && \
     chmod g+w /etc/passwd && \
-    fix-permissions "/home/${NB_USER}"
+    chown "${NB_USER}:${NB_GID}" /opt/venv && \
+    fix-permissions "/home/${NB_USER}" && \
+    fix-permissions /opt/venv
 
 RUN rm -rf "/home/${NB_USER}/.cache/"
 
@@ -228,6 +236,12 @@ RUN mkdir -p "/home/${NB_USER}/.local/share/jupyter/kernels/marimo" && \
 # ── register IRkernel (needs jupyter on PATH, runs after venv is built) ───────
 USER root
 RUN Rscript -e "IRkernel::installspec(user=FALSE)"
+
+# symlink venv binaries to /usr/local/bin so KubeSpawner finds them without
+# venv activation — KubeSpawner calls jupyterhub-singleuser directly,
+# bypassing start.sh and the before-notebook.d venv activation hook
+# /opt/venv/bin is added to secure_path via CONDA_DIR env var in start.sh
+
 RUN fix-permissions "/home/${NB_USER}"
 RUN rm -rf "/home/${NB_USER}/.cache/"
 
