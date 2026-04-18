@@ -1,0 +1,27 @@
+{
+  "name": "hub-profile-switcher",
+  "version": "0.1.0",
+  "description": "Switch JupyterHub server profile button for JupyterLab",
+  "keywords": ["jupyter", "jupyterlab", "jupyterlab-extension"],
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "jupyterlab": {
+    "extension": true,
+    "outputDir": "labextension",
+    "schemaDir": "schema"
+  },
+  "scripts": {
+    "build": "tsc --sourceMap && jupyter labextension build ."
+  },
+  "devDependencies": {
+    "@jupyterlab/builder": "^4.0.0",
+    "typescript": "~5.4.0"
+  },
+  "dependencies": {
+    "@jupyterlab/application": "^4.0.0",
+    "@jupyterlab/apputils": "^4.0.0",
+    "@jupyterlab/coreutils": "^6.0.0",
+    "@jupyterlab/mainmenu": "^4.0.0",
+    "@lumino/widgets": "^2.0.0"
+  }
+}

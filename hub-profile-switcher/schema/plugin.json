@@ -1,0 +1,15 @@
+{
+  "jupyter.lab.toolbars": {
+    "TopBar": [
+      {
+        "name": "hub-switch-profile",
+        "rank": 1000
+      }
+    ]
+  },
+  "title": "Hub Profile Switcher",
+  "description": "Settings for the hub profile switcher extension.",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
