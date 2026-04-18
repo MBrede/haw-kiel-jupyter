@@ -12,8 +12,14 @@ USER root
 
 USER ${NB_UID}
 
+COPY scripts/00-gpu-limit.py /home/${NB_USER}/.ipython/profile_default/startup/00-gpu-limit.py
+
 RUN uv pip install --no-cache-dir \
     torch \
-    jupyterlab-nvdashboard && \
-    fix-permissions "${VENV}" && \
+    jupyterlab-nvdashboard
+
+USER root
+RUN fix-permissions "${VENV}" && \
     fix-permissions "/home/${NB_USER}"
+
+USER ${NB_UID}

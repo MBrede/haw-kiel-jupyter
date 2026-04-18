@@ -1,7 +1,7 @@
 # HAW Kiel Notebook Base Image
 # Copyright (c) HAW Kiel — structure based on jupyter/docker-stacks (Modified BSD License)
 #
-# Replaces conda/mamba with uv. All Python packages go into a uv venv at ~/.venv.
+# Replaces conda/mamba with uv. All Python packages go into a uv venv at /opt/venv.
 # Scripts are copied verbatim from docker-stacks-foundation and base-notebook,
 # with minimal adaptations noted inline.
 #
@@ -13,6 +13,16 @@
 #   scipy-notebook equiv.    → scientific Python packages via uv
 #   r-notebook equiv.        → R + IRkernel via r2u
 
+# ── hub-profile-switcher extension build ─────────────────────────────────────
+FROM python:3.12-slim AS ext-builder
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir "jupyterlab>=4,<5"
+WORKDIR /build
+COPY hub-profile-switcher/ .
+RUN npm install && npm run build
+
+# ── main image ────────────────────────────────────────────────────────────────
 FROM ubuntu:24.04
 
 LABEL maintainer="HAW Kiel"
@@ -44,15 +54,27 @@ ENV PATH="${VENV}/bin:/usr/local/bin:${PATH}" \
 
 USER root
 
-# use German mirror for faster downloads from Kiel
+# ── use German mirror for faster downloads from Kiel ─────────────────────────
 RUN sed -i "s|http://archive.ubuntu.com|http://de.archive.ubuntu.com|g" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || \
-    sed -i "s|http://archive.ubuntu.com|http://de.archive.ubuntu.com|g" /etc/apt/sources.list 2>/dev/null || true
+    sed -i "s|http://archive.ubuntu.com|http://de.archive.ubuntu.com|g" /etc/apt/sources.list 2>/dev/null || true && \
+    sed -i "s|http://security.ubuntu.com|http://de.archive.ubuntu.com|g" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || \
+    sed -i "s|http://security.ubuntu.com|http://de.archive.ubuntu.com|g" /etc/apt/sources.list 2>/dev/null || true
 
-# ── system packages ───────────────────────────────────────────────────────────
+# ── texlive: own layer — large, slow, rarely changes ─────────────────────────
+# upgrade here so security patches are applied; cached after first build
+RUN apt-get update --yes && apt-get upgrade --yes && \
+    apt-get install --yes --no-install-recommends \
+        texlive-xetex \
+        texlive-fonts-recommended \
+        texlive-fonts-extra \
+        texlive-plain-generic \
+        texlive-latex-extra && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# ── remaining system packages ─────────────────────────────────────────────────
 # foundation: bzip2, ca-certificates, locales, netbase, sudo, tini, wget
 # base-notebook: fonts-liberation, pandoc, run-one
-# minimal-notebook: curl, git, nano-tiny, tzdata, unzip, vim-tiny, openssh-client,
-#                   less, texlive-*, xclip
+# minimal-notebook: curl, git, nano-tiny, tzdata, unzip, vim-tiny, openssh-client, less, xclip
 RUN apt-get update --yes && \
     apt-get install --yes --no-install-recommends \
         bzip2 \
@@ -74,11 +96,6 @@ RUN apt-get update --yes && \
         openssh-client \
         less \
         xclip \
-        texlive-xetex \
-        texlive-fonts-recommended \
-        texlive-fonts-extra \
-        texlive-plain-generic \
-        texlive-latex-extra \
         gnupg \
         fonts-dejavu \
         gfortran \
@@ -99,15 +116,18 @@ RUN apt-get update --yes && \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # ── scripts (verbatim from docker-stacks unless noted) ────────────────────────
-COPY scripts/fix-permissions          /usr/local/bin/fix-permissions
-COPY scripts/run-hooks.sh             /usr/local/bin/run-hooks.sh
-COPY scripts/start.sh                 /usr/local/bin/start.sh
-COPY scripts/start-notebook.py        /usr/local/bin/start-notebook.py
-COPY scripts/start-singleuser.py      /usr/local/bin/start-singleuser.py
-COPY scripts/10activate-venv.sh       /usr/local/bin/before-notebook.d/10activate-venv.sh
-# adapted: CONDA_DIR reference replaced with VENV
-COPY scripts/jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
-COPY scripts/docker_healthcheck.py    /etc/jupyter/docker_healthcheck.py
+COPY scripts/fix-permissions           /usr/local/bin/fix-permissions
+COPY scripts/run-hooks.sh              /usr/local/bin/run-hooks.sh
+COPY scripts/start.sh                  /usr/local/bin/start.sh
+COPY scripts/start-notebook.py         /usr/local/bin/start-notebook.py
+COPY scripts/start-singleuser.py       /usr/local/bin/start-singleuser.py
+COPY scripts/05welcome-doc.sh                    /usr/local/bin/before-notebook.d/05welcome-doc.sh
+COPY scripts/10activate-venv.sh                  /usr/local/bin/before-notebook.d/10activate-venv.sh
+COPY scripts/20nbgrader-instructor-setup.sh      /usr/local/bin/before-notebook.d/20nbgrader-instructor-setup.sh
+COPY scripts/jupyter_server_config.py  /etc/jupyter/jupyter_server_config.py
+COPY scripts/nbgrader_config.py        /etc/jupyter/nbgrader_config.py
+COPY scripts/WELCOME.md             /etc/jupyter/WELCOME.md
+COPY scripts/docker_healthcheck.py     /etc/jupyter/docker_healthcheck.py
 
 RUN chmod a+rx \
         /usr/local/bin/fix-permissions \
@@ -115,7 +135,9 @@ RUN chmod a+rx \
         /usr/local/bin/start.sh \
         /usr/local/bin/start-notebook.py \
         /usr/local/bin/start-singleuser.py \
-        /usr/local/bin/before-notebook.d/10activate-venv.sh && \
+        /usr/local/bin/before-notebook.d/05welcome-doc.sh \
+        /usr/local/bin/before-notebook.d/10activate-venv.sh \
+        /usr/local/bin/before-notebook.d/20nbgrader-instructor-setup.sh && \
     mkdir -p /usr/local/bin/start-notebook.d && \
     fix-permissions /etc/jupyter/
 
@@ -142,13 +164,15 @@ RUN curl -fsSL https://cdn.jsdelivr.net/gh/eddelbuettel/r2u/inst/scripts/add_cra
         r-cran-shiny \
         r-cran-tidymodels \
         r-cran-tidyverse \
+        r-cran-languageserver \
         unixodbc && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # ── prompt color in bashrc skeleton ──────────────────────────────────────────
 RUN sed -i 's/^#force_color_prompt=yes/force_color_prompt=yes/' /etc/skel/.bashrc
 
-# ── create /opt/venv dir owned by jovyan (mirrors CONDA_DIR=/opt/conda pattern)
+# ── /opt/venv: mirrors CONDA_DIR=/opt/conda pattern from docker-stacks ───────
+# root-owned parent, jovyan-owned venv dir — always on PATH via ENV
 RUN mkdir -p /opt/venv
 
 # ── jovyan user (mirrors docker-stacks-foundation exactly) ────────────────────
@@ -214,7 +238,23 @@ RUN uv venv "${VENV}" --python 3.12 && \
         plotly \
         transformers \
         sentence-transformers \
-        marimo \
+        "marimo[sandbox]>=0.23.1" \
+        marimo-jupyter-extension \
+        jupyter-server-proxy \
+        jupyterlab-lsp \
+        python-lsp-server \
+        jupyterlab-execute-time \
+        jupyterlab-code-formatter \
+        black \
+        isort \
+        nbgrader \
+        jupyterlab-spellchecker \
+        jupyterlab-latex \
+        jupyterlab-github \
+        jupyter_secrets_manager \
+        jupyterlab-logout \
+        jupyterlab-theme-toggler \
+        jlab-enhanced-cell-toolbar \
         uv && \
     jupyter server --generate-config && \
     jupyter lab clean && \
@@ -222,25 +262,32 @@ RUN uv venv "${VENV}" --python 3.12 && \
     fix-permissions "${VENV}" && \
     fix-permissions "/home/${NB_USER}"
 
+# ── hub-profile-switcher: copy built extension (no pip install needed) ────────
+COPY --from=ext-builder /build/labextension/ ${VENV}/share/jupyter/labextensions/hub-profile-switcher/
+
+# ── keyboard shortcut: Ctrl+Shift+H → hub control panel ──────────────────────
+RUN mkdir -p "${VENV}/share/jupyter/lab/settings" && \
+    echo '{"@jupyterlab/shortcuts-extension:shortcuts": {"shortcuts": [{"command": "hub:control-panel", "keys": ["Ctrl Shift H"], "selector": "body"}]}}' \
+    > "${VENV}/share/jupyter/lab/settings/overrides.json"
+
 # ── register Python kernel ────────────────────────────────────────────────────
+# --sys-prefix installs into /opt/venv/share/jupyter/kernels/ — survives PVC home mount
 RUN python -m ipykernel install \
-        --user \
+        --sys-prefix \
         --name uv-env \
         --display-name "Python (uv)"
 
-# ── register Marimo kernel ────────────────────────────────────────────────────
-RUN mkdir -p "/home/${NB_USER}/.local/share/jupyter/kernels/marimo" && \
-    echo '{"argv": ["python", "-m", "marimo", "kernel", "{connection_file}"], "display_name": "Marimo", "language": "python"}' \
-    > "/home/${NB_USER}/.local/share/jupyter/kernels/marimo/kernel.json"
 
 # ── register IRkernel (needs jupyter on PATH, runs after venv is built) ───────
 USER root
 RUN Rscript -e "IRkernel::installspec(user=FALSE)"
 
-# symlink venv binaries to /usr/local/bin so KubeSpawner finds them without
-# venv activation — KubeSpawner calls jupyterhub-singleuser directly,
-# bypassing start.sh and the before-notebook.d venv activation hook
-# /opt/venv/bin is added to secure_path via CONDA_DIR env var in start.sh
+# ── enable bspm sudo mode so install.packages() uses apt via sudo ────────────
+# bspm.py only exposes discover/available/install/remove — no shell access
+RUN echo 'options(bspm.sudo = TRUE)' >> /etc/R/Rprofile.site && \
+    echo "${NB_USER} ALL=(root) NOPASSWD: /usr/local/lib/R/site-library/bspm/service/bspm.py" \
+    > /etc/sudoers.d/bspm && \
+    chmod 0440 /etc/sudoers.d/bspm
 
 RUN fix-permissions "/home/${NB_USER}"
 RUN rm -rf "/home/${NB_USER}/.cache/"

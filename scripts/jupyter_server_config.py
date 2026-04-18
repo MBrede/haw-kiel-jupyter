@@ -57,3 +57,13 @@ if "GEN_CERT" in os.environ:
 # Change default umask for all subprocesses of the Server if set in the environment
 if "NB_UMASK" in os.environ:
     os.umask(int(os.environ["NB_UMASK"], 8))
+
+# ── marimo proxy configuration ────────────────────────────────────────────────
+# Disable sandbox mode: containers already have all packages in /opt/venv.
+# Sandbox mode tries to create per-notebook uvx environments, which fails
+# in an offline/restricted container and causes the proxy to time out.
+c.MarimoProxyConfig.no_sandbox = True
+c.MarimoProxyConfig.marimo_path = "/opt/venv/bin/marimo"
+c.MarimoProxyConfig.skip_update_check = True
+c.MarimoProxyConfig.idle_timeout = None   # run indefinitely (default 0.0 kills immediately)
+c.MarimoProxyConfig.session_ttl = None    # keep sessions on disconnect (default 0 closes immediately)
