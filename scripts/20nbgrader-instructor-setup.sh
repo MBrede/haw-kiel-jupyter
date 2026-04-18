@@ -17,7 +17,7 @@ is_instructor() {
 }
 
 if ! is_instructor; then
-    exit 0
+    return 0
 fi
 
 # Extract all course_* groups into an array
@@ -32,7 +32,7 @@ done
 
 if [[ ${#COURSE_IDS[@]} -eq 0 ]]; then
     # Instructor but no course group assigned yet — nothing to do
-    exit 0
+    return 0
 fi
 
 for COURSE_ID in "${COURSE_IDS[@]}"; do

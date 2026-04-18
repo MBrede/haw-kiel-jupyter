@@ -16,11 +16,30 @@ Deployed on a Kubernetes (RKE2) cluster on DFNCloud OpenStack with JupyterHub an
 
 ## Stack
 
-- **Python** — [uv](https://github.com/astral-sh/uv) venv at `~/.venv`, registered as "Python (uv)" kernel
+- **Python** — [uv](https://github.com/astral-sh/uv) venv at `/opt/venv`, registered as "Python (uv)" kernel
 - **R** — installed via [r2u](https://eddelbuettel.github.io/r2u/) binary apt packages for Ubuntu 24.04, registered as "R" kernel
-- **Marimo** — [Marimo](https://marimo.io/) reactive notebooks, registered as "Marimo" kernel
+- **Marimo** — [Marimo](https://marimo.io/) reactive notebooks via `marimo-jupyter-extension` + `jupyter-server-proxy`; launched from the sidebar, not a kernel
 - **Base OS** — Ubuntu 24.04 (noble)
 - **JupyterHub compatibility** — startup scripts adapted from [Jupyter Docker Stacks](https://github.com/jupyter/docker-stacks), supports `NB_UID`/`NB_GID` remapping and `before-notebook.d` hooks
+
+### JupyterLab Extensions
+
+| Extension | Purpose |
+|---|---|
+| `jupyterlab-git` | Git integration |
+| `jupyterlab-lsp` + `python-lsp-server` | Python autocomplete / code intelligence |
+| `r-cran-languageserver` | R autocomplete via LSP |
+| `jupyterlab-execute-time` | Cell execution time display |
+| `jupyterlab-code-formatter` + `black` + `isort` | Python code formatting |
+| `jupyterlab-spellchecker` | Spellcheck in Markdown cells |
+| `jupyterlab-latex` | LaTeX preview |
+| `jupyterlab-github` | GitHub file browser |
+| `jupyter_secrets_manager` | In-memory API key storage (no disk writes) |
+| `nbgrader` | Assignment distribution and grading |
+| `jupyterlab-logout` | Logout button |
+| `jupyterlab-theme-toggler` | Light/dark theme switch |
+| `jlab-enhanced-cell-toolbar` | Per-cell toolbar with run/move/delete |
+| `hub-profile-switcher` | Custom extension: Switch Profile button in TopBar |
 
 ## Repository Structure
 
@@ -28,18 +47,23 @@ Deployed on a Kubernetes (RKE2) cluster on DFNCloud OpenStack with JupyterHub an
 ├── Dockerfile.base          # Ubuntu 24.04 + uv + R + all shared packages
 ├── Dockerfile.cpu           # extends base, adds CPU-only PyTorch
 ├── Dockerfile.gpu           # extends base, adds CUDA PyTorch + nvdashboard
+├── hub-profile-switcher/    # custom JupyterLab extension (Switch Profile button)
 ├── test.sh                  # build and test all images locally
 ├── DOCKER_README.md         # Docker Hub description
 ├── LICENSE
 └── scripts/
-    ├── fix-permissions          # verbatim from jupyter/docker-stacks-foundation
-    ├── run-hooks.sh             # verbatim from jupyter/docker-stacks-foundation
-    ├── start.sh                 # verbatim from jupyter/docker-stacks-foundation
-    ├── start-singleuser.py      # verbatim from jupyter/base-notebook
-    ├── docker_healthcheck.py    # verbatim from jupyter/base-notebook
-    ├── start-notebook.py        # adapted: prepends uv venv to PATH
-    ├── jupyter_server_config.py # adapted: CONDA_DIR → VENV
-    └── 10activate-venv.sh       # replaces 10activate-conda-env.sh
+    ├── fix-permissions                  # verbatim from jupyter/docker-stacks-foundation
+    ├── run-hooks.sh                     # verbatim from jupyter/docker-stacks-foundation
+    ├── start.sh                         # verbatim from jupyter/docker-stacks-foundation
+    ├── start-singleuser.py              # verbatim from jupyter/base-notebook
+    ├── docker_healthcheck.py            # verbatim from jupyter/base-notebook
+    ├── start-notebook.py                # adapted: prepends uv venv to PATH
+    ├── jupyter_server_config.py         # adapted: CONDA_DIR → VENV, Marimo config
+    ├── nbgrader_config.py               # nbgrader exchange path + group roles
+    ├── WELCOME.md                       # user-facing docs, copied to ~/WELCOME.md on login
+    ├── 05welcome-doc.sh                 # before-notebook.d: copies WELCOME.md to home
+    ├── 10activate-venv.sh               # before-notebook.d: activates /opt/venv
+    └── 20nbgrader-instructor-setup.sh   # before-notebook.d: auto-creates course dirs for professors
 ```
 
 ## Building

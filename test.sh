@@ -159,9 +159,9 @@ test_singleuser() {
         return
     fi
 
-    # wait up to 30s for server to respond
+    # wait up to 120s for server to respond (heavy image with many extensions takes longer)
     READY=0
-    for i in $(seq 1 30); do
+    for i in $(seq 1 120); do
         if curl -sf -o /dev/null "http://localhost:${port}/api" 2>/dev/null; then
             READY=1
             break
@@ -172,7 +172,7 @@ test_singleuser() {
     if [[ "${READY}" -eq 1 ]]; then
         _ok "Server started and healthy (${image})"
     else
-        _fail "Server did not become healthy within 30s (${image})"
+        _fail "Server did not become healthy within 120s (${image})"
         docker logs "${CID}" 2>&1 | tail -20 | sed 's/^/    /'
     fi
 
